@@ -1,0 +1,77 @@
+#!/bin/sh
+
+# shellcheck disable=SC3043
+
+set -e
+
+PHYTOOL="$(dirname "$0")/phytool"
+
+usage() {
+	echo 'Usage: mt7530tool read  IFACE/REG'
+	echo '       mt7530tool write IFACE/REG <0-0xffffffff>'
+}
+
+get_iface() {
+	# shellcheck disable=SC2086
+	( IFS=/; set -- $1; echo "$1" )
+}
+
+get_reg() {
+	# shellcheck disable=SC2086
+	( IFS=/; set -- $1; echo "$2" )
+}
+
+do_read() {
+	local addr="$1" iface reg page r hi lo
+	iface="$(get_iface "$addr")"
+	reg="$(get_reg "$addr")"
+
+	page=$(((reg >> 6) & 0x3ff))
+	r=$(((reg >> 2) & 0xf))
+
+	"$PHYTOOL" write "$iface/0x1f/0x1f" "$page"
+	lo=$("$PHYTOOL" read "$iface/0x1f/$r")
+	hi=$("$PHYTOOL" read "$iface/0x1f/0x10")
+
+	printf '0x%08x\n' "$(((hi * 0x10000) | (lo & 0xffff)))"
+}
+
+do_write() {
+	local addr="$1" val="$2" iface reg page r hi lo
+
+	iface="$(get_iface "$addr")"
+	reg="$(get_reg "$addr")"
+
+	page=$(((reg >> 6) & 0x3ff))
+	r=$(((reg >> 2) & 0xf))
+
+	lo=$((val & 0xffff))
+	hi=$((val >> 16))
+
+	"$PHYTOOL" write "$iface/0x1f/0x1f" "$page"
+	"$PHYTOOL" write "$iface/0x1f/$r" "$lo"
+	"$PHYTOOL" write "$iface/0x1f/0x10" "$hi"
+}
+
+case "$1" in
+read)
+	if [ $# -ne 2 ]; then
+		usage
+		exit 1
+	fi
+	do_read "$2"
+	;;
+write)
+	if [ $# -ne 3 ]; then
+		usage
+		exit 1
+	fi
+	do_write "$2" "$3"
+	;;
+--help)
+	usage
+	;;
+*)
+	usage
+	exit 1
+esac
